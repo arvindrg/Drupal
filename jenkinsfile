@@ -1,0 +1,99 @@
+pipeline{
+
+  agent any
+  
+      parameters {
+        string(name: 'git_repo_source', defaultValue: 'https://github.com/arvindrg/Drupal.git', description: 'Git repository from where we are going to checkout the code (dev  branch) and build.')
+        string(name: 'git_repo_branch', defaultValue: 'main', description: 'The branch to be checked out')
+        string(name: 'helm_repo_source', defaultValue: 'https://github.com/arvindrg/Drupal.git', description: 'Git repository from where we are going to checkout the code (dev  branch) and build.')
+        string(name: 'helm_repo_branch', defaultValue: 'main', description: 'The branch to be checked out')
+        string(name: 'helm_repo_source_push', defaultValue: 'github.com/arvindrg/Drupal.git', description: 'Git repository from where we are going to checkout the code (dev  branch) and build.')
+        credentials(name: 'drupal', defaultValue: 'drupal', description: 'helm repo credentials', credentialType: "Secret text", required: true)
+    }
+
+
+// triggers{
+// pollSCM('* * * * *')
+// }
+
+options{
+timestamps()
+buildDiscarder(logRotator(artifactDaysToKeepStr: '30', artifactNumToKeepStr: '5', daysToKeepStr: '7', numToKeepStr: '5'))
+timeout(time: 1, unit: 'HOURS')
+}
+
+stages{
+
+  stage('CheckOutCode'){
+    steps{
+        // cleanWs()
+        // env.code_author_name = sh(returnStdout: true, script: "git --no-pager show -s --format='%an' ${commitId}").trim()
+        // env.code_author_email = sh(returnStdout: true, script: "git --no-pager show -s --format='%ae' ${commitId}").trim()
+    git branch: 'main', url: 'https://github.com/arvindrg/Drupal.git'
+	
+	}
+  }
+  
+  
+stage("Build Dokcer Image"){
+  steps{
+  sh  "docker build -t gajjala7012/drupal-nginx:$BUILD_NUMBER ."
+  }
+  }
+  
+stage("Docker Push"){
+  steps{
+      withCredentials([string(credentialsId: 'Docker_Hub_Pwd', variable: 'Docker_Hub_Pwd')]) {
+          sh "docker login -u gajjala7012 -p ${Docker_Hub_Pwd}"
+      }
+          sh "docker push gajjala7012/drupal-nginx:$BUILD_NUMBER"
+  }
+  }
+  
+  stage('Checkout helm repo') {
+            steps {
+             git branch: "${params.helm_repo_branch}",
+                credentialsId: 'drupal',
+                url: "${params.helm_repo_source}"
+                withCredentials([usernamePassword(credentialsId: params.drupal, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]){
+
+                    sh """  sed -i "s/tag: .*\$/tag: DOCKER_IMAGE_TAG/" drupal-nginx/values.yaml
+                                cat -n drupal-nginx/values.yaml | grep -I "tag:" | awk '{print \$1,\$2,\$3}'
+                                sed -i "s/DOCKER_IMAGE_TAG.*\$/$BUILD_NUMBER/" drupal-nginx/values.yaml
+                                cat -n drupal-nginx/values.yaml | grep -I "tag:" | awk '{print \$1,\$2,\$3}'
+                                apt-get  install -y curl jq python3 python3-pip &&  pip3 install yamllint
+                                yamllint -d '{extends: relaxed, rules: {line-length: {max: 250}, trailing-spaces: disable }}' drupal-nginx/values.yaml
+                        """
+                    sh """  git add drupal-nginx/values.yaml
+                                git config --global user.email "$env.code_author_email"
+                                git config --global user.name "$env.code_author_name"
+                                git commit -am "Docker Version Change to ${env.DOCKER_IMAGE_TAG} Build ${env.BUILD_NUMBER}"
+                                git push https://${USERNAME}:${PASSWORD.replace('@', '%40')}@${params.helm_repo_source_push}
+                        """ // Checkout and Commit the version
+                }
+            }  
+
+        }
+  
+}//Stages Closing
+
+post{
+
+ success{
+ emailext to: 'gajjalareddy5755@gmail.com',
+          subject: "Pipeline Build is over .. Build # is ..${env.BUILD_NUMBER} and Build status is.. ${currentBuild.result}.",
+          body: "Pipeline Build is over .. Build # is ..${env.BUILD_NUMBER} and Build status is.. ${currentBuild.result}.",
+          replyTo: 'gajjalareddy5755@gmail.com'
+ }
+ 
+ failure{
+ emailext to: 'gajjalareddy5755@gmail.com',
+          subject: "Pipeline Build is over .. Build # is ..${env.BUILD_NUMBER} and Build status is.. ${currentBuild.result}.",
+          body: "Pipeline Build is over .. Build # is ..${env.BUILD_NUMBER} and Build status is.. ${currentBuild.result}.",
+          replyTo: 'gajjalareddy5755@gmail.com'
+ }
+ 
+}
+
+
+}//Pipeline closing

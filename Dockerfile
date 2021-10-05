@@ -1,37 +1,39 @@
+ARG PHP_VERSION=7.4
 ARG BASE_VERSION=buster
-FROM srijanlabs/debian:${BASE_VERSION}
+FROM srijanlabs/php-fpm:${PHP_VERSION}-${BASE_VERSION}
 
-RUN mkdir /app && \
-    chown -R continua:continua /app
+USER root
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        apache2=2.4.38-3+deb10u5 \
+        libapache2-mod-fcgid=1:2.3.9-4 \
+    && a2enmod actions \
+    && a2enmod proxy \
+    && a2enmod rewrite \
+    && a2enmod proxy_fcgi \
+    && a2enmod headers \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY start.sh /usr/local/bin/start.sh
+
+# Apache configurations
+COPY app.conf /etc/apache2/sites-enabled/000-default.conf
+COPY envvars ports.conf /etc/apache2/
+COPY drupal /app
 
 EXPOSE 8080
 
-WORKDIR /app
+ENV DOC_ROOT="/app/web" \
+    PHP_HOST=localhost
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
-RUN echo "deb http://nginx.org/packages/debian buster nginx" > /etc/apt/sources.list.d/nginx.list \
-    && curl -fsSL https://nginx.org/keys/nginx_signing.key |  apt-key add - \
-    && DEBIAN_FRONTEND=noninteractive apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    nginx=1.18.0-1~buster \
-    && rm -rf /var/lib/apt/lists/* 
-
-COPY nginx.conf /etc/nginx/nginx.conf 
-COPY default.conf /etc/nginx/conf.d/default.conf
-
-RUN sed -i -r "s/\/nginx.pid/\/nginx\/nginx.pid/g" /etc/logrotate.d/nginx
-
-RUN mkdir /var/run/nginx \
-    mkdir -p /var/cache/nginxfastcgi \
+RUN chmod -R 0777 /var/tmp \
+    && mkdir -p /var/run/apache2 \
     && chown -R continua:continua \
         /var/log \
-        /var/cache/nginx \
-        /var/run/nginx \
-        /var/cache/nginxfastcgi \
-        /etc/nginx/conf.d \
-        /etc/logrotate.d/nginx
-        
+        /var/lib/apache2 \
+        /etc/apache2 \
+        /var/run/apache2
+
 USER continua
 
-CMD [ "nginx"]
+CMD [ "start.sh" ]
