@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  repository: gajjala7012/drupal-nginx
+  repository: gajjala7012/drupal-apache
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: 14
