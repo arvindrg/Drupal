@@ -37,3 +37,4 @@ RUN chmod -R 0777 /var/tmp \
 USER continua
 
 CMD [ "start.sh" ]
+
